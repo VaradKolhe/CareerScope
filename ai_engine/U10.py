@@ -88,15 +88,15 @@ async def generate_quiz(request: GenerateRequest):
         - Hobbies: {hobbies_str}
         
         REQUIREMENTS:
-        1. Generate exactly 10 questions.
-        2. Mix "Technical/Aptitude" questions and "Personality" questions.
+        1. Generate exactly 15 questions.
+        2. Mix "Aptitude" questions and "Personality" questions.
         
         3. CRITICAL - DIFFICULTY CONTROL:
-           - The student is in {request.grade_level}. The technical questions MUST be solvable by a student of this age.
+           - The student is in {request.grade_level}. The aptitude questions MUST be solvable by a student of this age.
            - If "Class 10": Use basic logic, school-level science (NCERT level), percentages, and simple real-world problem solving. DO NOT use advanced calculus, coding syntax, or complex engineering terms.
-           - If "UGrad": You can use industry-standard technical questions.
+           - Do not use industry-standard aptitude questions.
            
-        4. "Technical" questions should test their *aptitude* for the subject (e.g., "If you like Math, solve this simple logic puzzle"), not their memorization.
+        4. "Aptitude" questions should test their *aptitude* for the subject (e.g., "If you like Math, solve this simple logic puzzle"), not their memorization.
         5. "Personality" questions should assess their work style (e.g., "Do you prefer working alone or in a team?").
         
         Output STRICT JSON format:
@@ -104,7 +104,7 @@ async def generate_quiz(request: GenerateRequest):
           "questions": [
             {{
               "id": 1,
-              "type": "Technical", 
+              "type": "Aptitude" or "Personality", 
               "question": "...",
               "options": ["...", "...", "...", "..."]
             }}

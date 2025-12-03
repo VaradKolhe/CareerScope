@@ -14,7 +14,7 @@ const QuizU10 = () => {
   const [profileData, setProfileData] = useState({
     subjects: [],
     hobbies: [],
-    grade_level: "Class 10",
+    grade_level: "Under Class 10",
   });
 
   const [llmQuestions, setLlmQuestions] = useState([]);
@@ -314,10 +314,10 @@ const QuizU10 = () => {
                   <span className="text-xs font-bold tracking-widest text-slate-500 uppercase">
                     Question {currentQIndex + 1} of {llmQuestions.length}
                   </span>
-                  {/* TYPE BADGE (Technical/Personality) */}
+                  {/* TYPE BADGE (Aptitude/Personality) */}
                   <span
                     className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                      llmQuestions[currentQIndex].type === "Technical"
+                      llmQuestions[currentQIndex].type === "Aptitude"
                         ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
                         : "bg-purple-500/10 text-purple-400 border border-purple-500/20"
                     }`}
