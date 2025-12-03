@@ -1,57 +1,37 @@
-import { useState, useContext, useEffect } from "react";
+import { useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { AuthContext } from "../context/AuthContext";
-// import api from "../services/api";
+import api from "../services/api";
 
 const QuizU10 = () => {
-  const { user } = useContext(AuthContext); // Check if user is logged in
+  const { user } = useContext(AuthContext);
   const navigate = useNavigate();
 
   // --- STATE MANAGEMENT ---
-  const [step, setStep] = useState(1);
-  const [interests, setInterests] = useState({ subject: "", hobby: "" });
+  const [step, setStep] = useState(1); // 1: Profile, 2: Quiz, 3: Loading, 4: Result
+  const [currentQIndex, setCurrentQIndex] = useState(0);
+
+  const [profileData, setProfileData] = useState({
+    subjects: [],
+    hobbies: [],
+    grade_level: "Class 10",
+  });
+
   const [llmQuestions, setLlmQuestions] = useState([]);
   const [quizAnswers, setQuizAnswers] = useState({});
   const [prediction, setPrediction] = useState(null);
   const [loadingMessage, setLoadingMessage] = useState("");
-  const [currentQIndex, setCurrentQIndex] = useState(0);
-
-  // New State for Limit Reached Modal
   const [showLimitModal, setShowLimitModal] = useState(false);
 
-  // --- CHECK QUOTA ON LOAD ---
-  useEffect(() => {
-    if (user) return; // Logged in users have no limits
-
-    const checkQuota = () => {
-      const quotaStr = localStorage.getItem("guest_quota");
-      if (!quotaStr) return;
-
-      const quota = JSON.parse(quotaStr);
-      const oneWeek = 7 * 24 * 60 * 60 * 1000;
-
-      // If a week has passed, reset the counter
-      if (Date.now() - quota.weekStart > oneWeek) {
-        localStorage.removeItem("guest_quota");
-        return;
-      }
-
-      // If limit reached, warn user immediately (Optional, or wait till submit)
-      // We will wait till submit to be less intrusive
-    };
-    checkQuota();
-  }, [user]);
-
-  // --- HELPER: UPDATE QUOTA ---
-  const incrementGuestUsage = () => {
-    if (user) return true; // Bypass for logged in users
+  // --- GUEST QUOTA LOGIC ---
+  const checkAndIncrementGuestUsage = () => {
+    if (user) return true;
 
     const quotaStr = localStorage.getItem("guest_quota");
     let quota = quotaStr
       ? JSON.parse(quotaStr)
       : { count: 0, weekStart: Date.now() };
 
-    // Check if week expired
     const oneWeek = 7 * 24 * 60 * 60 * 1000;
     if (Date.now() - quota.weekStart > oneWeek) {
       quota = { count: 0, weekStart: Date.now() };
@@ -59,53 +39,102 @@ const QuizU10 = () => {
 
     if (quota.count >= 2) {
       setShowLimitModal(true);
-      return false; // Stop execution
+      return false;
     }
-
-    // Increment and Save
-    quota.count += 1;
-    localStorage.setItem("guest_quota", JSON.stringify(quota));
-    return true; // Continue
+    return true;
   };
 
-  // --- STEP 1: HANDLE INTEREST SUBMISSION ---
-  const handleInterestSubmit = async (e) => {
+  // --- STAGE 1: GENERATE QUIZ ---
+  const handleProfileSubmit = async (e) => {
     e.preventDefault();
-
-    // Check limit BEFORE calling AI API (Save resources)
-    if (!incrementGuestUsage()) return;
+    if (!checkAndIncrementGuestUsage()) return;
 
     setStep(3);
-    setLoadingMessage("AI is generating your personalized quiz...");
+    setLoadingMessage(
+      "AI is synthesizing your interests and generating a diagnostic quiz..."
+    );
 
     try {
-      setTimeout(() => {
-        setLlmQuestions([
-          {
-            id: 1,
-            text: "You enjoy solving puzzles. Do you prefer logic or words?",
-            options: ["Logic", "Words"],
-          },
-          {
-            id: 2,
-            text: "If a machine breaks, do you fix it or call support?",
-            options: ["Fix it", "Call support"],
-          },
-        ]);
-        setStep(2);
+      const payload = {
+        subjects: profileData.subjects,
+        hobbies: profileData.hobbies,
+        grade_level: profileData.grade_level,
+      };
+
+      const res = await api.post("/generate_quiz", payload);
+
+      // Validate response structure matches your LLM output
+      if (res.data && res.data.questions && Array.isArray(res.data.questions)) {
+        setLlmQuestions(res.data.questions);
+        setQuizAnswers({});
         setCurrentQIndex(0);
-      }, 2000);
+        setStep(2);
+      } else {
+        throw new Error("Invalid quiz format received from AI");
+      }
     } catch (error) {
-      console.error("Failed to generate quiz", error);
-      setStep(1);
+      console.error("Quiz generation failed:", error);
+      setLoadingMessage("Error: Could not generate quiz. Please try again.");
+      setTimeout(() => setStep(1), 2000);
     }
   };
 
-  // --- STEP 2 HANDLERS ---
+  // --- STAGE 3: EVALUATE QUIZ ---
+  const handleFinalSubmit = async () => {
+    if (Object.keys(quizAnswers).length < llmQuestions.length) {
+      return;
+    }
+
+    setStep(3);
+    setLoadingMessage(
+      "Analyzing your responses and calculating confidence scores..."
+    );
+
+    try {
+      // Format Responses exactly as Python expects
+      const formattedResponses = llmQuestions.map((q) => ({
+        question_text: q.question, // Mapped from LLM 'question' field
+        selected_option: quizAnswers[q.id] || "No Answer",
+      }));
+
+      const payload = {
+        profile: profileData,
+        responses: formattedResponses,
+      };
+
+      const res = await api.post("/evaluate_quiz", payload);
+      setPrediction(res.data);
+      setStep(4);
+
+      // Update local storage count ONLY if guest succeeded
+      if (!user) {
+        let quota = JSON.parse(localStorage.getItem("guest_quota")) || {
+          count: 0,
+          weekStart: Date.now(),
+        };
+        quota.count += 1;
+        localStorage.setItem("guest_quota", JSON.stringify(quota));
+      }
+    } catch (error) {
+      console.error("Quiz evaluation failed:", error);
+      setLoadingMessage("Evaluation Error. Please check backend connection.");
+      setTimeout(() => setStep(1), 3000);
+    }
+  };
+
+  // --- STAGE 2: QUIZ NAVIGATION ---
   const handleAnswerChange = (qId, answer) =>
     setQuizAnswers({ ...quizAnswers, [qId]: answer });
 
   const handleNext = () => {
+    // Current question object based on index
+    const currentQuestion = llmQuestions[currentQIndex];
+
+    if (!quizAnswers[currentQuestion.id]) {
+      alert("Please select an option before moving to the next question.");
+      return;
+    }
+
     if (currentQIndex < llmQuestions.length - 1) {
       setCurrentQIndex((prev) => prev + 1);
     } else {
@@ -117,28 +146,25 @@ const QuizU10 = () => {
     if (currentQIndex > 0) setCurrentQIndex((prev) => prev - 1);
   };
 
-  const handleFinalSubmit = async () => {
-    setStep(3);
-    setLoadingMessage("Analyzing responses...");
-
-    setTimeout(() => {
-      setPrediction({
-        recommended_stream: "Science (PCM)",
-        reason: "Strong analytical skills detected.",
-        careers: ["Software Engineering", "Data Science"],
-      });
-      setStep(4);
-    }, 2000);
+  // --- HELPER: Toggle Selection for Multi-select ---
+  const toggleSelection = (category, value) => {
+    setProfileData((prev) => {
+      const current = prev[category];
+      const updated = current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value].slice(0, 2); // Max 2 selections
+      return { ...prev, [category]: updated };
+    });
   };
 
-  // --- PROGRESS BAR ---
+  // --- RENDER HELPERS ---
   const VerticalProgressBar = () => {
     const progress = ((currentQIndex + 1) / llmQuestions.length) * 100;
     return (
       <div className="flex flex-col items-center justify-center h-full ml-6 hidden md:flex">
         <div className="w-3 h-64 bg-slate-700 rounded-full relative overflow-hidden shadow-inner">
           <div
-            className="absolute bottom-0 w-full bg-cyan-500 transition-all duration-500 ease-out"
+            className="absolute bottom-0 w-full bg-cyan-500 transition-all duration-500 ease-out shadow-[0_0_15px_rgba(6,182,212,0.6)]"
             style={{ height: `${progress}%` }}
           ></div>
         </div>
@@ -151,49 +177,36 @@ const QuizU10 = () => {
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center py-10 px-4 relative">
-      {/* --- LIMIT REACHED MODAL --- */}
+      {/* Limit Modal */}
       {showLimitModal && (
         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 border border-slate-700 p-8 rounded-2xl shadow-2xl max-w-sm text-center transform scale-100 transition-all">
-            <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
-              🔒
-            </div>
+          <div className="bg-slate-800 border border-slate-700 p-8 rounded-2xl shadow-2xl max-w-sm text-center">
             <h3 className="text-2xl font-bold text-white mb-2">
               Guest Limit Reached
             </h3>
             <p className="text-slate-400 mb-6">
               You have used your <strong>2 free predictions</strong> for this
-              week. Please create a free account to continue exploring your
-              career path.
+              week.
             </p>
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={() => navigate("/register")}
-                className="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-900 font-bold py-3 rounded-lg transition"
-              >
-                Create Free Account
-              </button>
-              <button
-                onClick={() => navigate("/login")}
-                className="w-full border border-slate-600 text-slate-300 hover:bg-slate-700 font-bold py-3 rounded-lg transition"
-              >
-                Login
-              </button>
-            </div>
+            <button
+              onClick={() => navigate("/register")}
+              className="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-900 font-bold py-3 rounded-lg transition"
+            >
+              Create Free Account
+            </button>
           </div>
         </div>
       )}
 
-      {/* --- MAIN CARD --- */}
+      {/* Main Card */}
       <div className="w-full max-w-3xl flex items-center justify-center">
-        <div className="flex-1 bg-slate-800 shadow-2xl rounded-2xl overflow-hidden border border-slate-700 p-8 relative min-h-[400px] flex flex-col">
-          {/* Background Decor */}
+        <div className="flex-1 bg-slate-800 shadow-2xl rounded-2xl overflow-hidden border border-slate-700 p-8 relative min-h-[500px] flex flex-col">
           <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl -z-0 pointer-events-none"></div>
 
-          {/* STEP 1 */}
+          {/* ================= STEP 1: PROFILE INPUT ================= */}
           {step === 1 && (
             <form
-              onSubmit={handleInterestSubmit}
+              onSubmit={handleProfileSubmit}
               className="space-y-6 relative z-10"
             >
               <div className="text-center mb-6">
@@ -207,152 +220,264 @@ const QuizU10 = () => {
                 )}
               </div>
 
-              <div className="space-y-5">
+              <div className="space-y-6">
                 <div>
-                  <label className="block text-sm font-bold text-slate-300 mb-2">
-                    Favorite Subject
+                  <label className="block text-sm font-bold text-slate-300 mb-3">
+                    Select Top 2 Favorite Subjects
                   </label>
-                  <select
-                    value={interests.subject}
-                    onChange={(e) =>
-                      setInterests({ ...interests, subject: e.target.value })
-                    }
-                    required
-                    className="w-full p-4 bg-slate-900 border border-slate-600 rounded-xl text-slate-200 focus:ring-2 focus:ring-cyan-500 outline-none"
-                  >
-                    <option value="">Select...</option>
-                    <option value="Maths">Mathematics</option>
-                    <option value="History">History</option>
-                    <option value="Arts">Arts</option>
-                  </select>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      "Maths",
+                      "Science",
+                      "Physics",
+                      "Chemistry",
+                      "Biology",
+                      "Social Studies",
+                      "English",
+                      "Art",
+                      "Computer Science",
+                    ].map((sub) => (
+                      <button
+                        key={sub}
+                        type="button"
+                        onClick={() => toggleSelection("subjects", sub)}
+                        className={`px-4 py-2 rounded-full text-sm font-semibold transition border ${
+                          profileData.subjects.includes(sub)
+                            ? "bg-cyan-500 text-slate-900 border-cyan-500 shadow-md shadow-cyan-500/20"
+                            : "bg-slate-800 text-slate-400 border-slate-600 hover:border-slate-400"
+                        }`}
+                      >
+                        {sub}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+
                 <div>
-                  <label className="block text-sm font-bold text-slate-300 mb-2">
-                    Primary Hobby
+                  <label className="block text-sm font-bold text-slate-300 mb-3">
+                    Select Top 2 Hobbies
                   </label>
-                  <select
-                    value={interests.hobby}
-                    onChange={(e) =>
-                      setInterests({ ...interests, hobby: e.target.value })
-                    }
-                    required
-                    className="w-full p-4 bg-slate-900 border border-slate-600 rounded-xl text-slate-200 focus:ring-2 focus:ring-cyan-500 outline-none"
-                  >
-                    <option value="">Select...</option>
-                    <option value="Gaming">Gaming</option>
-                    <option value="Writing">Writing</option>
-                  </select>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      "Gaming",
+                      "Coding",
+                      "Reading",
+                      "Writing",
+                      "Sports",
+                      "Music",
+                      "Drawing",
+                      "Robotics",
+                      "Debating",
+                      "Photography",
+                    ].map((hobby) => (
+                      <button
+                        key={hobby}
+                        type="button"
+                        onClick={() => toggleSelection("hobbies", hobby)}
+                        className={`px-4 py-2 rounded-full text-sm font-semibold transition border ${
+                          profileData.hobbies.includes(hobby)
+                            ? "bg-purple-500 text-white border-purple-500 shadow-md shadow-purple-500/20"
+                            : "bg-slate-800 text-slate-400 border-slate-600 hover:border-slate-400"
+                        }`}
+                      >
+                        {hobby}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
+
               <button
                 type="submit"
-                className="w-full bg-cyan-600 text-white font-bold py-4 px-6 rounded-xl hover:bg-cyan-500 transition mt-4"
+                disabled={
+                  profileData.subjects.length === 0 ||
+                  profileData.hobbies.length === 0
+                }
+                className={`w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold py-4 px-6 rounded-xl hover:shadow-lg hover:shadow-cyan-500/30 transition mt-6 transform active:scale-95 ${
+                  profileData.subjects.length === 0 ||
+                  profileData.hobbies.length === 0
+                    ? "opacity-50 cursor-not-allowed"
+                    : ""
+                }`}
               >
-                Start Analysis &rarr;
+                Generate Personalized Quiz &rarr;
               </button>
             </form>
           )}
 
-          {/* STEP 2 (Question Cards) */}
+          {/* ================= STEP 2: DYNAMIC QUIZ CARD ================= */}
           {step === 2 && llmQuestions.length > 0 && (
             <div className="flex-1 flex flex-col justify-between relative z-10 animate-fadeIn">
+              {/* Question Header & Badge */}
               <div key={currentQIndex} className="animate-slideIn">
-                <span className="text-xs font-bold tracking-widest text-cyan-500 uppercase mb-2 block">
-                  Question {currentQIndex + 1}
-                </span>
-                <h3 className="text-xl md:text-2xl font-bold text-white mb-6">
-                  {llmQuestions[currentQIndex].text}
+                <div className="flex justify-between items-center mb-4">
+                  <span className="text-xs font-bold tracking-widest text-slate-500 uppercase">
+                    Question {currentQIndex + 1} of {llmQuestions.length}
+                  </span>
+                  {/* TYPE BADGE (Technical/Personality) */}
+                  <span
+                    className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                      llmQuestions[currentQIndex].type === "Technical"
+                        ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                        : "bg-purple-500/10 text-purple-400 border border-purple-500/20"
+                    }`}
+                  >
+                    {llmQuestions[currentQIndex].type} Check
+                  </span>
+                </div>
+
+                {/* Question Text */}
+                <h3 className="text-xl md:text-2xl font-bold text-white mb-8 leading-snug min-h-[80px]">
+                  {llmQuestions[currentQIndex].question}
                 </h3>
-                <div className="space-y-3">
-                  {llmQuestions[currentQIndex].options.map((opt) => (
-                    <label
-                      key={opt}
-                      className={`cursor-pointer border p-4 rounded-xl flex items-center transition-all duration-200 ${
-                        quizAnswers[llmQuestions[currentQIndex].id] === opt
-                          ? "bg-cyan-900/30 border-cyan-500 ring-1 ring-cyan-500"
-                          : "bg-slate-900 border-slate-700 hover:bg-slate-800"
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name={`q-${llmQuestions[currentQIndex].id}`}
-                        value={opt}
-                        onChange={() =>
-                          handleAnswerChange(
-                            llmQuestions[currentQIndex].id,
-                            opt
-                          )
-                        }
-                        className="hidden"
-                      />
-                      <span
-                        className={`w-5 h-5 rounded-full border mr-4 flex items-center justify-center ${
-                          quizAnswers[llmQuestions[currentQIndex].id] === opt
-                            ? "border-cyan-400"
-                            : "border-slate-600"
+
+                {/* Options Grid */}
+                <div className="grid grid-cols-1 gap-3">
+                  {llmQuestions[currentQIndex].options.map((opt, idx) => {
+                    const isSelected =
+                      quizAnswers[llmQuestions[currentQIndex].id] === opt;
+                    return (
+                      <label
+                        key={idx}
+                        className={`cursor-pointer p-4 rounded-xl flex items-center transition-all duration-200 border-2 ${
+                          isSelected
+                            ? "bg-cyan-900/20 border-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.1)]"
+                            : "bg-slate-800 border-slate-700 hover:border-slate-500 hover:bg-slate-700/50"
                         }`}
                       >
-                        {quizAnswers[llmQuestions[currentQIndex].id] ===
-                          opt && (
-                          <div className="w-2.5 h-2.5 bg-cyan-400 rounded-full"></div>
-                        )}
-                      </span>
-                      <span className="text-slate-200 font-medium">{opt}</span>
-                    </label>
-                  ))}
+                        <input
+                          type="radio"
+                          name={`q-${llmQuestions[currentQIndex].id}`}
+                          value={opt}
+                          onChange={() =>
+                            handleAnswerChange(
+                              llmQuestions[currentQIndex].id,
+                              opt
+                            )
+                          }
+                          className="hidden"
+                        />
+                        {/* Custom Radio UI */}
+                        <div
+                          className={`w-6 h-6 rounded-full border-2 mr-4 flex items-center justify-center flex-shrink-0 transition-colors ${
+                            isSelected ? "border-cyan-400" : "border-slate-600"
+                          }`}
+                        >
+                          {isSelected && (
+                            <div className="w-3 h-3 bg-cyan-400 rounded-full shadow-sm"></div>
+                          )}
+                        </div>
+                        <span
+                          className={`font-medium ${
+                            isSelected ? "text-cyan-50" : "text-slate-300"
+                          }`}
+                        >
+                          {opt}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
-              <div className="flex justify-between mt-8 pt-4 border-t border-slate-700">
+
+              {/* Navigation */}
+              <div className="flex justify-between mt-8 pt-6 border-t border-slate-700/50">
                 <button
                   onClick={handlePrev}
                   disabled={currentQIndex === 0}
-                  className={`text-slate-400 font-semibold hover:text-white transition ${
-                    currentQIndex === 0 ? "opacity-0" : "opacity-100"
+                  className={`text-slate-400 font-semibold hover:text-white transition flex items-center gap-2 ${
+                    currentQIndex === 0
+                      ? "opacity-0 cursor-default"
+                      : "opacity-100"
                   }`}
                 >
-                  &larr; Back
+                  &larr; Previous
                 </button>
+
                 <button
                   onClick={handleNext}
                   disabled={!quizAnswers[llmQuestions[currentQIndex].id]}
-                  className={`bg-white text-slate-900 font-bold py-2 px-6 rounded-lg hover:bg-cyan-50 ${
+                  className={`bg-white text-slate-900 font-bold py-3 px-8 rounded-xl transition hover:bg-cyan-50 shadow-lg ${
                     !quizAnswers[llmQuestions[currentQIndex].id]
                       ? "opacity-50 cursor-not-allowed"
-                      : ""
+                      : "opacity-100 transform hover:scale-105 hover:shadow-cyan-500/20"
                   }`}
                 >
                   {currentQIndex === llmQuestions.length - 1
-                    ? "Finish Quiz"
-                    : "Next"}
+                    ? "Finish & Evaluate"
+                    : "Next Question"}
                 </button>
               </div>
             </div>
           )}
 
-          {/* STEP 3 & 4 (Loading & Results) */}
+          {/* ================= STEP 3 & 4: LOADING / RESULT ================= */}
           {(step === 3 || step === 4) && (
-            <div className="flex flex-col items-center justify-center h-full text-center relative z-10">
+            <div className="flex flex-col items-center justify-center h-full text-center relative z-10 animate-fadeIn">
               {step === 3 && (
-                <>
-                  <div className="inline-block animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-cyan-400 mb-6"></div>
-                  <h3 className="text-xl font-bold text-white animate-pulse">
+                <div className="py-12">
+                  <div className="relative w-20 h-20 mx-auto mb-8">
+                    <div className="absolute top-0 w-full h-full rounded-full border-4 border-slate-700"></div>
+                    <div className="absolute top-0 w-full h-full rounded-full border-4 border-t-cyan-400 border-r-transparent border-b-transparent border-l-transparent animate-spin"></div>
+                  </div>
+                  <h3 className="text-2xl font-bold text-white mb-2 animate-pulse">
                     {loadingMessage}
                   </h3>
-                </>
+                  <p className="text-slate-400">
+                    Our AI is analyzing your patterns...
+                  </p>
+                </div>
               )}
 
               {step === 4 && prediction && (
-                <div className="animate-fadeIn">
-                  <div className="bg-emerald-900/20 p-8 rounded-2xl border border-emerald-500/30 shadow-inner mb-6">
-                    <h4 className="text-emerald-400 uppercase tracking-widest text-xs font-bold mb-3">
-                      Recommended Stream
+                <div className="w-full">
+                  <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-700 shadow-inner mb-8 text-left">
+                    <h4 className="text-cyan-400 uppercase tracking-widest text-xs font-bold mb-4">
+                      AI Evaluation Summary
                     </h4>
-                    <h1 className="text-4xl font-black text-white mb-4">
-                      {prediction.recommended_stream}
-                    </h1>
-                    <p className="text-slate-300 leading-relaxed mb-4">
-                      {prediction.reason}
+                    <p className="text-slate-300 leading-relaxed mb-6 border-b border-slate-700 pb-6">
+                      {prediction.summary}
                     </p>
+
+                    <h5 className="text-lg font-bold text-white mb-4">
+                      Top 3 Recommended Streams:
+                    </h5>
+                    <div className="space-y-4">
+                      {prediction.suggestions?.map((s, index) => (
+                        <div
+                          key={index}
+                          className="bg-slate-800 p-5 rounded-xl border border-slate-700 hover:border-cyan-500/50 transition group"
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <span className="text-xl font-bold text-white group-hover:text-cyan-300 transition">
+                              {s.role}
+                            </span>
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs font-bold ${
+                                s.confidence > 80
+                                  ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                  : "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"
+                              }`}
+                            >
+                              {s.confidence}% Match
+                            </span>
+                          </div>
+                          <p className="text-sm text-slate-400 mb-3">
+                            {s.reason}
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {s.required_skills?.map((skill) => (
+                              <span
+                                key={skill}
+                                className="text-[10px] bg-slate-900 text-slate-400 px-2 py-1 rounded border border-slate-700"
+                              >
+                                {skill}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                   <button
                     onClick={() => {
@@ -360,16 +485,19 @@ const QuizU10 = () => {
                       setQuizAnswers({});
                       setPrediction(null);
                       setCurrentQIndex(0);
+                      setLlmQuestions([]);
                     }}
-                    className="text-cyan-400 font-bold hover:underline"
+                    className="text-cyan-400 font-bold hover:text-cyan-300 hover:underline transition"
                   >
-                    Start Over
+                    Start New Analysis
                   </button>
                 </div>
               )}
             </div>
           )}
         </div>
+
+        {/* Sidebar Progress Bar */}
         {step === 2 && <VerticalProgressBar />}
       </div>
     </div>
