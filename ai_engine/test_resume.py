@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from main import app
+from ai_engine.U10 import app
 
 client = TestClient(app)
 

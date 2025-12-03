@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 const LinkButton = ({ to, children, primary }) => {
   // Base styles for all buttons
   const baseStyle =
-    "px-6 py-3 rounded-lg font-semibold transition-all duration-200 transform hover:-translate-y-1 shadow-md";
+    "px-6 py-3 rounded-lg font-semibold transition-all duration-200 transform hover:-translate-y-1 shadow-md cursor-pointer";
 
   const colorStyle = primary
     ? "bg-cyan-500 text-slate-900 hover:bg-cyan-400 hover:shadow-lg" // Updated for Dark Theme

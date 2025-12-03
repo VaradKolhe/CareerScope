@@ -148,7 +148,7 @@ const Navbar = () => {
               ) : (
                 <Link
                   to="/login"
-                  className="block w-full text-center px-4 py-3 text-base font-bold text-slate-900 bg-cyan-400 rounded-lg hover:bg-cyan-300"
+                  className="block w-full text-center px-4 py-3 text-base font-bold text-slate-900 bg-cyan-400 rounded-lg hover:bg-cyan-300 cursor-pointer shadow-lg shadow-cyan-500/20"
                   onClick={() => setIsOpen(false)}
                 >
                   Login / Sign Up
