@@ -159,6 +159,7 @@ async def evaluate_quiz(request: EvaluateRequest):
         2. Analyze their temperament based on personality questions.
         3. Recommend exactly 3 specific Career Paths or Streams available in India (e.g., Science PCM, Commerce with Math, Diploma in CS).
         4. Assign a "Confidence Score" (0-100%) to each.
+        5. The Confidence Score should reflect how well their answers align with the demands of that career and in the output it should be in descending order.
         
         Output STRICT JSON format:
         {{

@@ -17,12 +17,27 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  // Store prediction history here
   history: [
     {
-      module: { type: String, enum: ['U10', 'U12', 'UGrad'] },
-      result: String, // e.g., "Science PCM"
-      date: { type: Date, default: Date.now }
+      module: { 
+        type: String, 
+        required: true 
+      },
+      topPrediction: { 
+        type: String, 
+        required: true 
+      },
+      confidence: { 
+        type: Number, 
+        required: true 
+      },
+      summary: { 
+        type: String 
+      },
+      date: { 
+        type: Date, 
+        default: Date.now 
+      }
     }
   ],
   createdAt: {

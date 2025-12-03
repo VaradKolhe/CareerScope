@@ -106,8 +106,23 @@ const QuizU10 = () => {
       setPrediction(res.data);
       setStep(4);
 
-      // Update local storage count ONLY if guest succeeded
-      if (!user) {
+      if (user) {
+        try {
+          // Extract the top result (index 0)
+          const bestPath = res.data.suggestions[0];
+
+          await api.post("/profile/history", {
+            module: "U10",
+            topPrediction: bestPath.role, // e.g. "Science (PCM)"
+            confidence: bestPath.confidence, // e.g. 85
+            summary: res.data.summary, // e.g. "Strong logic..."
+          });
+          console.log("✅ Result saved to history successfully");
+        } catch (saveError) {
+          console.error("❌ Failed to save history:", saveError);
+        }
+      } else {
+        // Guest Logic
         let quota = JSON.parse(localStorage.getItem("guest_quota")) || {
           count: 0,
           weekStart: Date.now(),

@@ -51,4 +51,40 @@ router.put('/', auth, async (req, res) => {
     }
 });
 
+router.post('/history', auth, async (req, res) => {
+    const { module, topPrediction, confidence, summary } = req.body;
+
+    if (!module || !topPrediction || !confidence) {
+        return res.status(400).json({ msg: 'Missing result data' });
+    }
+
+    try {
+        const newHistoryItem = {
+            module,
+            topPrediction,
+            confidence,
+            summary,
+            date: Date.now()
+        };
+
+        const user = await User.findByIdAndUpdate(
+            req.user.id,
+            { 
+                $push: { 
+                    history: { 
+                        $each: [newHistoryItem], // Add item
+                        $position: 0             // Push to TOP of array (newest first)
+                    } 
+                } 
+            },
+            { new: true, select: '-password' }
+        );
+
+        res.json(user.history); // Return updated history
+    } catch (err) {
+        console.error("History Save Error:", err.message);
+        res.status(500).send('Server Error');
+    }
+});
+
 module.exports = router;
