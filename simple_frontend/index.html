@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resume Upload Test</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        .container { border: 1px solid #ccc; padding: 2rem; border-radius: 8px; }
+        .result { margin-top: 2rem; white-space: pre-wrap; background: #f5f5f5; padding: 1rem; border-radius: 4px; display: none; }
+        button { padding: 0.5rem 1rem; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:disabled { background: #ccc; }
+        .error { color: red; margin-top: 1rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Resume Analysis Test</h1>
+        <p>Upload a PDF or DOCX resume to analyze it.</p>
+        
+        <input type="file" id="fileInput" accept=".pdf,.docx">
+        <br><br>
+        <button onclick="uploadResume()" id="uploadBtn">Analyze Resume</button>
+        
+        <div id="error" class="error"></div>
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        async function uploadResume() {
+            const fileInput = document.getElementById('fileInput');
+            const resultDiv = document.getElementById('result');
+            const errorDiv = document.getElementById('error');
+            const btn = document.getElementById('uploadBtn');
+
+            if (!fileInput.files[0]) {
+                errorDiv.textContent = "Please select a file first.";
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+
+            // Reset UI
+            resultDiv.style.display = 'none';
+            errorDiv.textContent = '';
+            btn.disabled = true;
+            btn.textContent = 'Analyzing...';
+
+            try {
+                const response = await fetch('http://localhost:8000/upload_resume', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Upload failed');
+                }
+
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+                resultDiv.style.display = 'block';
+            } catch (err) {
+                errorDiv.textContent = `Error: ${err.message}`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Analyze Resume';
+            }
+        }
+    </script>
+</body>
+</html>

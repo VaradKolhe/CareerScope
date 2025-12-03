@@ -1,7 +1,0 @@
-@import "tailwindcss";
-
-@layer base {
-  :root {
-    --color-brandBlue: #007bff;
-  }
-}
