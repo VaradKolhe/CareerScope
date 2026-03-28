@@ -27,7 +27,7 @@ router.post("/register", async (req, res) => {
     jwt.sign(
       payload, // payload for JWT
       process.env.JWT_SECRET || "secret123", // secret key for JWT
-      { expiresIn: "7d" }, // token expiration
+      { expiresIn: "1d" }, // token expiration
       (err, token) => {
         if (err) throw err; // handle error
         res.json({
@@ -57,7 +57,7 @@ router.post("/login", async (req, res) => {
     jwt.sign(
       payload,
       process.env.JWT_SECRET || "secret123",
-      { expiresIn: "7d" },
+      { expiresIn: "1d" },
       (err, token) => {
         if (err) throw err;
         res.json({

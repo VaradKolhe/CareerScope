@@ -73,7 +73,7 @@ async def generate_quiz(request: GenerateRequest):
 
     try:
         genai.configure(api_key=API_KEY)
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
 
         subjects_str = ", ".join(request.subjects)
         hobbies_str = ", ".join(request.hobbies)
@@ -132,7 +132,7 @@ async def evaluate_quiz(request: EvaluateRequest):
 
     try:
         genai.configure(api_key=API_KEY)
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
 
         interaction_history = ""
         for i, resp in enumerate(request.responses):
